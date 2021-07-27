@@ -2,6 +2,7 @@
 import random
 import os
 import jsonpickle
+import sqlite3
 
 
 class FileProvider:
@@ -29,7 +30,8 @@ class FileProvider:
         file.write("")
         file.close()
 
-
+connection = sqlite3.connect('MyTester.db')
+connection2 = sqlite3.connect('MyResult.db')
 file_provider = FileProvider()
 
 
@@ -40,11 +42,16 @@ class Question:
 
 
 class QuestionStrorage:
-    def __init__(self):
-        self.file_name = 'questions.json'
+    def __init__(self, connection):
+        self.connection = connection
 
-    def get_all(self):
-        if not file_provider.exists(self.file_name):
+        cursor = connection.cursor()
+
+        cursor.execute('''SELECT count(name) FROM sqlite_master WHERE type = 'table' AND name = 'questions' ''')
+
+        if cursor.fetchone()[0] == 0:
+            cursor.execute("""CREATE TABLE questions(Text TEXT PRIMARY KEY, Answer INTEGER);""")
+            connection.commit()
             questions = [
                 Question('Сколько будет 2 + 2 * 2', 6),
                 Question('Бревно надо распелить на 10 частей, сколько нужно пилов', 9),
@@ -54,26 +61,43 @@ class QuestionStrorage:
             ]
             self.safe_questions(questions)
 
-        data = file_provider.get(self.file_name)
-        questions = jsonpickle.decode(data)
+
+    def get_all(self):
+        cursor = self.connection.cursor()
+
+        cursor.execute("SELECT * FROM questions;")
+        all_result = cursor.fetchall()
+
+        questions = []
+
+        for result in all_result:
+            question = Question(result[0], result[1])
+            questions.append(question)
         return questions
 
     def safe_questions(self, questions):
-        json_data = jsonpickle.encode(questions)
-        file_provider.writelines(self.file_name, json_data)
+        for question in questions:
+            self.add_question(question)
 
     def add_question(self, question):
-        questions = self.get_all()
-        questions.append(question)
-        self.safe_questions(questions)
+        query = f"""INSERT INTO questions (Text, Answer) VALUES('{question.text}', '{question.answer}');"""
+
+        cursor = self.connection.cursor()
+        cursor.execute(query)
+        self.connection.commit()
+
 
     def remove(self, index):
         questions = self.get_all()
-        questions.pop(index)
-        self.safe_questions(questions)
+        question_for_delete = questions.pop(index)
+        query = f"""DELETE FROM questions WHERE Text = '{question_for_delete.text}';"""
+
+        cursor = self.connection.cursor()
+        cursor.execute(query)
+        self.connection.commit()
 
 
-qs = QuestionStrorage()
+qs = QuestionStrorage(connection)
 
 
 class User:
@@ -93,26 +117,42 @@ class User:
 
 
 class UsersResultStorage:
-    def __init__(self):
-        self.file_name = 'result.json'
+    def __init__(self, connection):
+        self.connection = connection
+
+        cursor = connection.cursor()
+
+        cursor.execute('''SELECT count(name) FROM sqlite_master WHERE type = 'table' AND name = 'user_results' ''')
+
+        if cursor.fetchone()[0] == 0:
+            cursor.execute("""CREATE TABLE user_results(Text TEXT PRIMARY KEY, CountRA INTEGER, Result Text);""")
+            connection.commit()
+            users_result = []
+            self.safe(users_result)
 
     def get_all(self):
-        if not file_provider.exists(self.file_name):
-            users = []
-            self.safe(users)
+        cursor = self.connection.cursor()
 
-        data = file_provider.get(self.file_name)
-        users = jsonpickle.decode(data)
-        return users
+        cursor.execute("SELECT * FROM user_results;")
+        all_result = cursor.fetchall()
 
-    def safe(self, users):
-        json_data = jsonpickle.encode(users)
-        file_provider.writelines(self.file_name, json_data)
+        users_result = []
+
+        for user in all_result:
+            user = User(user[0], user[1], user[2])
+            users_result.append(user)
+        return users_result
+
+    def safe(self, users_result):
+        for user in users_result:
+            self.add_user(user)
 
     def add_user(self, user):
-        users = self.get_all()
-        users.append(user)
-        self.safe(users)
+        query = f"""INSERT INTO user_results (Text, CountRA, Result) VALUES('{user.name}', '{user.count_right_answers}', '{user.result}');"""
+
+        cursor = self.connection.cursor()
+        cursor.execute(query)
+        self.connection.commit()
 
 def show_user_results(table_result):
     if table_result.lower() == 'y':
@@ -147,7 +187,7 @@ def remove_question():
         break
 
 
-user_result = UsersResultStorage()
+user_result = UsersResultStorage(connection2)
 
 jsonpickle.set_encoder_options('json', indent=4, separators=(',', ': '), ensure_ascii=False)
 while True:
